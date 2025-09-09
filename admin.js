@@ -1,11 +1,11 @@
 // admin.js
 import { auth, database, ref, get, update, onValue } from './firebase.js';
+import { getAllUsers, searchUsers, addPointsToUser, checkAdminStatus } from './firebase.js';
 import { authManager } from './auth.js';
-import { searchUsers, addPointsToUser, getAllUsers } from './firebase.js';
 
 class AdminManager {
     constructor() {
-        this.selectedUser = null;
+        this.currentUser = null;
         this.init();
     }
 
@@ -14,8 +14,9 @@ class AdminManager {
         const hasAccess = await authManager.checkAdminAccess();
         if (!hasAccess) return;
 
-        this.loadAllUsers();
+        this.currentUser = auth.currentUser;
         this.setupEventListeners();
+        this.loadAllUsers();
     }
 
     async loadAllUsers() {
@@ -23,164 +24,178 @@ class AdminManager {
             const users = await getAllUsers();
             this.displayUsers(users);
         } catch (error) {
-            console.error('Error loading users:', error);
+            console.error("Error loading users:", error);
+            this.showError("فشل في تحميل المستخدمين");
         }
     }
 
     async searchUsers() {
-        const searchTerm = document.getElementById('search-input').value;
-        const rankFilter = document.getElementById('rank-filter').value;
+        const searchTerm = document.getElementById('admin-search').value;
+        const rankFilter = document.getElementById('admin-rank-filter').value;
         
         try {
             const results = await searchUsers(searchTerm, rankFilter);
             this.displayUsers(results);
         } catch (error) {
-            console.error('Error searching users:', error);
+            console.error("Error searching users:", error);
+            this.showError("فشل في البحث عن المستخدمين");
         }
     }
 
     displayUsers(users) {
-        const usersTable = document.getElementById('users-table');
+        const usersTable = document.getElementById('admin-users-table');
+        if (!usersTable) return;
+
         usersTable.innerHTML = '';
 
         if (!users || Object.keys(users).length === 0) {
-            usersTable.innerHTML = '<tr><td colspan="7" style="text-align: center;">لا توجد نتائج</td></tr>';
+            usersTable.innerHTML = '<tr><td colspan="8" style="text-align: center;">لا توجد نتائج</td></tr>';
             return;
         }
 
-        const rankTitles = [
-            "مبتدئ", "عضو", "عضو متميز", "عضو نشيط", "عضو فعال",
-            "عضو برونزي", "عضو فضي", "عضو ذهبي", "عضو بلاتيني", "عضو ماسي", "قائد"
-        ];
-
-        Object.entries(users).forEach(([userId, user]) => {
+        for (const userId in users) {
+            const user = users[userId];
             const row = usersTable.insertRow();
+            
+            const rankTitles = [
+                "مبتدئ", "عضو", "عضو متميز", "عضو نشيط", "عضو فعال",
+                "عضو برونزي", "عضو فضي", "عضو ذهبي", "عضو بلاتيني", "عضو ماسي", "قائد"
+            ];
+            
+            const userRank = user.rank || 0;
+            const rankTitle = rankTitles[userRank] || "غير محدد";
+
             row.innerHTML = `
-                <td>${user.name || 'غير معروف'}</td>
-                <td>${user.email || 'غير معروف'}</td>
-                <td><span class="user-badge level-${user.rank || 0}">${rankTitles[user.rank || 0]} (${user.rank || 0})</span></td>
+                <td>${user.name || "غير معروف"}</td>
+                <td>${user.email || "غير معروف"}</td>
+                <td><span class="user-badge level-${userRank}">${rankTitle}</span></td>
                 <td>${user.points || 0}</td>
                 <td>${user.isAdmin ? 'نعم' : 'لا'}</td>
                 <td>${new Date(user.joinDate).toLocaleDateString('ar-SA')}</td>
                 <td>
-                    <button class="action-btn select-user" data-userid="${userId}">
-                        <i class="fas fa-user-edit"></i> تحديد
+                    <input type="number" id="points-${userId}" min="0" value="0" class="points-input">
+                </td>
+                <td>
+                    <button class="action-btn add-points-btn" data-userid="${userId}">
+                        <i class="fas fa-plus"></i> إضافة نقاط
+                    </button>
+                    <button class="action-btn view-details-btn" data-userid="${userId}">
+                        <i class="fas fa-eye"></i> تفاصيل
                     </button>
                 </td>
             `;
-        });
+        }
 
-        // إضافة event listeners للأزرار
-        document.querySelectorAll('.select-user').forEach(btn => {
+        // إضافة مستمعين للأزرار
+        this.setupUserActionsListeners();
+    }
+
+    setupUserActionsListeners() {
+        // أزرار إضافة النقاط
+        document.querySelectorAll('.add-points-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const userId = e.target.closest('.select-user').dataset.userid;
-                this.selectUser(userId, users[userId]);
+                const userId = e.target.closest('.add-points-btn').dataset.userid;
+                this.addPointsToUser(userId);
+            });
+        });
+
+        // أزرار عرض التفاصيل
+        document.querySelectorAll('.view-details-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const userId = e.target.closest('.view-details-btn').dataset.userid;
+                this.viewUserDetails(userId);
             });
         });
     }
 
-    selectUser(userId, userData) {
-        this.selectedUser = { id: userId, ...userData };
-        this.displayUserDetails();
-    }
-
-    displayUserDetails() {
-        const userDetails = document.getElementById('user-details');
-        const rankTitles = [
-            "مبتدئ", "عضو", "عضو متميز", "عضو نشيط", "عضو فعال",
-            "عضو برونزي", "عضو فضي", "عضو ذهبي", "عضو بلاتيني", "عضو ماسي", "قائد"
-        ];
-
-        userDetails.innerHTML = `
-            <h3>تفاصيل المستخدم</h3>
-            <div class="user-info-card">
-                <p><strong>الاسم:</strong> ${this.selectedUser.name}</p>
-                <p><strong>البريد الإلكتروني:</strong> ${this.selectedUser.email}</p>
-                <p><strong>المرتبة:</strong> ${rankTitles[this.selectedUser.rank || 0]} (${this.selectedUser.rank || 0})</p>
-                <p><strong>النقاط:</strong> ${this.selectedUser.points || 0}</p>
-                <p><strong>مشرف:</strong> ${this.selectedUser.isAdmin ? 'نعم' : 'لا'}</p>
-                <p><strong>تاريخ الانضمام:</strong> ${new Date(this.selectedUser.joinDate).toLocaleDateString('ar-SA')}</p>
-                
-                <div class="admin-actions">
-                    <h4>الإجراءات الإدارية</h4>
-                    <div class="add-points-form">
-                        <input type="number" id="points-to-add" placeholder="عدد النقاط" min="1">
-                        <button class="action-btn" onclick="adminManager.addPoints()">
-                            <i class="fas fa-plus"></i> إضافة نقاط
-                        </button>
-                    </div>
-                    
-                    <div class="admin-toggle">
-                        <label>
-                            <input type="checkbox" id="admin-toggle" ${this.selectedUser.isAdmin ? 'checked' : ''}>
-                            صلاحية المشرف
-                        </label>
-                        <button class="action-btn" onclick="adminManager.toggleAdmin()">
-                            <i class="fas fa-user-shield"></i> تحديث
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    async addPoints() {
-        if (!this.selectedUser) {
-            alert('يرجى تحديد مستخدم أولاً');
-            return;
-        }
-
-        const pointsInput = document.getElementById('points-to-add');
+    async addPointsToUser(userId) {
+        const pointsInput = document.getElementById(`points-${userId}`);
         const pointsToAdd = parseInt(pointsInput.value);
-
+        
         if (isNaN(pointsToAdd) || pointsToAdd <= 0) {
-            alert('يرجى إدخال عدد صحيح موجب من النقاط');
+            this.showError("يرجى إدخال عدد صحيح موجب من النقاط");
             return;
         }
 
         try {
-            await addPointsToUser(this.selectedUser.id, pointsToAdd, auth.currentUser.uid);
-            alert(`تمت إضافة ${pointsToAdd} نقطة للمستخدم ${this.selectedUser.name}`);
+            await addPointsToUser(userId, pointsToAdd, this.currentUser.uid);
+            this.showSuccess(`تم إضافة ${pointsToAdd} نقطة للمستخدم بنجاح`);
             
-            // تحديث البيانات
-            pointsInput.value = '';
+            // تحديث القائمة
             this.loadAllUsers();
-            this.selectUser(this.selectedUser.id, { ...this.selectedUser, points: (this.selectedUser.points || 0) + pointsToAdd });
         } catch (error) {
-            alert(`خطأ: ${error.message}`);
+            console.error("Error adding points:", error);
+            this.showError(error.message || "فشل في إضافة النقاط");
         }
     }
 
-    async toggleAdmin() {
-        if (!this.selectedUser) {
-            alert('يرجى تحديد مستخدم أولاً');
-            return;
-        }
-
-        const adminToggle = document.getElementById('admin-toggle');
-        const isAdmin = adminToggle.checked;
-
-        try {
-            await update(ref(database, `users/${this.selectedUser.id}`), {
-                isAdmin: isAdmin
-            });
-
-            alert(`تم ${isAdmin ? 'منح' : 'سحب'} صلاحية المشرف من ${this.selectedUser.name}`);
-            this.loadAllUsers();
-            this.selectUser(this.selectedUser.id, { ...this.selectedUser, isAdmin });
-        } catch (error) {
-            alert(`خطأ: ${error.message}`);
-        }
+    async viewUserDetails(userId) {
+        // هنا يمكنك تنفيذ عرض تفاصيل المستخدم
+        alert(`عرض تفاصيل المستخدم: ${userId}`);
     }
 
     setupEventListeners() {
-        document.getElementById('search-btn').addEventListener('click', () => this.searchUsers());
-        document.getElementById('search-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.searchUsers();
-        });
-        document.getElementById('rank-filter').addEventListener('change', () => this.searchUsers());
+        // زر البحث
+        const searchBtn = document.getElementById('admin-search-btn');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                this.searchUsers();
+            });
+        }
+
+        // البحث أثناء الكتابة
+        const searchInput = document.getElementById('admin-search');
+        if (searchInput) {
+            searchInput.addEventListener('keyup', () => {
+                this.searchUsers();
+            });
+        }
+
+        // تصفية حسب الرتبة
+        const rankFilter = document.getElementById('admin-rank-filter');
+        if (rankFilter) {
+            rankFilter.addEventListener('change', () => {
+                this.searchUsers();
+            });
+        }
+
+        // تسجيل الخروج
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                authManager.handleLogout();
+            });
+        }
+    }
+
+    showError(message) {
+        const alertDiv = document.getElementById('admin-alert');
+        if (alertDiv) {
+            alertDiv.textContent = message;
+            alertDiv.className = 'alert alert-error';
+            alertDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                alertDiv.style.display = 'none';
+            }, 3000);
+        }
+    }
+
+    showSuccess(message) {
+        const alertDiv = document.getElementById('admin-alert');
+        if (alertDiv) {
+            alertDiv.textContent = message;
+            alertDiv.className = 'alert alert-success';
+            alertDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                alertDiv.style.display = 'none';
+            }, 3000);
+        }
     }
 }
 
-// تهيئة النظام عند تحميل الصفحة
-const adminManager = new AdminManager();
+// تهيئة لوحة المشرفين عند تحميل الصفحة
+document.addEventListener('DOMContentLoaded', () => {
+    new AdminManager();
+});
