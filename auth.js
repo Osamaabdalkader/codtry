@@ -15,6 +15,7 @@ class AuthManager {
       onAuthStateChanged(auth, async (user) => {
         this.currentUser = user;
         if (user) {
+          console.log("تم تسجيل دخول المستخدم:", user.uid);
           // التحقق من صلاحية المشرف
           await this.checkAndUpdateAdminStatus(user.uid);
           
@@ -23,6 +24,7 @@ class AuthManager {
           
           resolve(user);
         } else {
+          console.log("لا يوجد مستخدم مسجل دخول");
           this.isAdmin = false;
           this.updateAuthUI(false);
           resolve(null);
@@ -33,7 +35,9 @@ class AuthManager {
 
   async checkAndUpdateAdminStatus(userId) {
     try {
+      console.log("جاري التحقق من صلاحية المشرف للمستخدم:", userId);
       this.isAdmin = await checkAdminStatus(userId);
+      console.log("صلاحية المشرف:", this.isAdmin);
       this.updateAuthUI(true);
       return this.isAdmin;
     } catch (error) {
@@ -135,21 +139,30 @@ class AuthManager {
 
   // التحقق من صلاحية المشرف
   async checkAdminAccess() {
-    if (!this.currentUser) {
+    try {
+      if (!this.currentUser) {
+        console.log("لا يوجد مستخدم حالي، إعادة التوجيه إلى الرئيسية");
+        window.location.href = 'index.html';
+        return false;
+      }
+      
+      // التحقق مباشرة من قاعدة البيانات
+      this.isAdmin = await checkAdminStatus(this.currentUser.uid);
+      console.log("نتيجة التحقق من الصلاحية:", this.isAdmin);
+      
+      if (!this.isAdmin) {
+        alert('ليست لديك صلاحية الوصول إلى هذه الصفحة');
+        window.location.href = 'index.html';
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("خطأ في التحقق من صلاحية المشرف:", error);
+      alert('حدث خطأ أثناء التحقق من الصلاحية');
       window.location.href = 'index.html';
       return false;
     }
-    
-    // التحقق مباشرة من قاعدة البيانات
-    this.isAdmin = await checkAdminStatus(this.currentUser.uid);
-    
-    if (!this.isAdmin) {
-      alert('ليست لديك صلاحية الوصول إلى هذه الصفحة');
-      window.location.href = 'index.html';
-      return false;
-    }
-    
-    return true;
   }
 }
 
