@@ -1,5 +1,5 @@
 // admin.js
-import { auth, database, ref, get, update, onValue } from './firebase.js';
+import { auth, database, ref, get, update } from './firebase.js';
 import { getAllUsers, searchUsers, addPointsToUser, checkAdminStatus } from './firebase.js';
 import { authManager } from './auth.js';
 
@@ -12,28 +12,40 @@ class AdminManager {
   async init() {
     console.log("بدء تهيئة لوحة المشرفين");
     
-    // التحقق من صلاحية المشرف مع معالجة الأخطاء
-    try {
-      const hasAccess = await authManager.checkAdminAccess();
-      console.log("صلاحية المشرف:", hasAccess);
-      
-      if (!hasAccess) {
-        console.log("لا توجد صلاحية وصول، إعادة التوجيه");
-        return;
-      }
-
-      this.currentUser = auth.currentUser;
-      console.log("المستخدم الحالي:", this.currentUser.uid);
-      
-      // تحميل بيانات المستخدم أولاً
-      await this.loadCurrentUserData();
-      
-      this.setupEventListeners();
-      this.loadAllUsers();
-      
-    } catch (error) {
-      console.error("خطأ في تهيئة لوحة المشرفين:", error);
+    // الانتظار حتى يتم تهيئة authManager
+    if (!authManager.currentUser) {
+      await authManager.init();
     }
+    
+    this.currentUser = auth.currentUser;
+    
+    if (!this.currentUser) {
+      console.log("لا يوجد مستخدم مسجل دخول");
+      alert("يجب تسجيل الدخول أولاً");
+      window.location.href = 'index.html';
+      return;
+    }
+    
+    console.log("المستخدم الحالي:", this.currentUser.uid);
+    
+    // التحقق من صلاحية المشرف بدون إعادة توجيه تلقائية
+    const isAdmin = await checkAdminStatus(this.currentUser.uid);
+    console.log("صلاحية المشرف:", isAdmin);
+    
+    if (!isAdmin) {
+      console.log("ليست لديك صلاحية الوصول إلى هذه الصفحة");
+      alert("ليست لديك صلاحية الوصول إلى لوحة المشرفين");
+      window.location.href = 'dashboard.html';
+      return;
+    }
+    
+    console.log("تم التحقق من الصلاحية بنجاح، تحميل لوحة المشرفين");
+    
+    // تحميل بيانات المستخدم أولاً
+    await this.loadCurrentUserData();
+    
+    this.setupEventListeners();
+    this.loadAllUsers();
   }
 
   async loadCurrentUserData() {
