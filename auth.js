@@ -112,11 +112,15 @@ class AuthManager {
       
       // إظهار عناصر المشرفين فقط إذا كان المستخدم مشرفاً
       if (this.isAdmin) {
-        adminElements.forEach(el => el.style.display = 'block');
-        console.log("تم عرض عناصر المشرفين");
+        adminElements.forEach(el => {
+          el.style.display = 'block';
+          console.log("تم عرض عنصر المشرفين:", el);
+        });
       } else {
-        adminElements.forEach(el => el.style.display = 'none');
-        console.log("تم إخفاء عناصر المشرفين");
+        adminElements.forEach(el => {
+          el.style.display = 'none';
+          console.log("تم إخفاء عنصر المشرفين:", el);
+        });
       }
     } else {
       authElements.forEach(el => el.style.display = 'none');
@@ -137,30 +141,29 @@ class AuthManager {
     }, 3000);
   }
 
-  // التحقق من صلاحية المشرف
+  // التحقق من صلاحية المشرف - الإصدار المعدل
   async checkAdminAccess() {
     try {
       if (!this.currentUser) {
-        console.log("لا يوجد مستخدم حالي، إعادة التوجيه إلى الرئيسية");
-        window.location.href = 'index.html';
+        console.log("لا يوجد مستخدم حالي");
         return false;
       }
+      
+      console.log("التحقق من صلاحية المشرف للمستخدم:", this.currentUser.uid);
       
       // التحقق مباشرة من قاعدة البيانات
-      this.isAdmin = await checkAdminStatus(this.currentUser.uid);
-      console.log("نتيجة التحقق من الصلاحية:", this.isAdmin);
+      const isAdmin = await checkAdminStatus(this.currentUser.uid);
+      console.log("نتيجة التحقق من الصلاحية:", isAdmin);
       
-      if (!this.isAdmin) {
-        alert('ليست لديك صلاحية الوصول إلى هذه الصفحة');
-        window.location.href = 'index.html';
+      if (!isAdmin) {
+        console.log("ليست لديك صلاحية الوصول إلى هذه الصفحة");
         return false;
       }
       
+      console.log("تم التحقق من الصلاحية بنجاح");
       return true;
     } catch (error) {
       console.error("خطأ في التحقق من صلاحية المشرف:", error);
-      alert('حدث خطأ أثناء التحقق من الصلاحية');
-      window.location.href = 'index.html';
       return false;
     }
   }
