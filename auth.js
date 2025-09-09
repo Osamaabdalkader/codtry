@@ -1,12 +1,13 @@
 // auth.js - الملف المشترك للمصادقة
 import { auth, onAuthStateChanged, signOut } from './firebase.js';
-import { checkAdminStatus } from './firebase.js';
+import { checkAdminStatus, onValue, ref, database } from './firebase.js';
 
 class AuthManager {
   constructor() {
     this.currentUser = null;
     this.userData = null;
     this.isAdmin = false;
+    this.adminListeners = [];
   }
 
   async init() {
@@ -15,18 +16,80 @@ class AuthManager {
         this.currentUser = user;
         if (user) {
           // التحقق من صلاحية المشرف
-          this.isAdmin = await checkAdminStatus(user.uid);
+          await this.checkAndUpdateAdminStatus(user.uid);
+          
+          // إعداد مستمع لتغيرات حالة المشرف
+          this.setupAdminStatusListener(user.uid);
+          
           resolve(user);
         } else {
           this.isAdmin = false;
+          this.updateAuthUI(false);
           resolve(null);
         }
       });
     });
   }
 
+  async checkAndUpdateAdminStatus(userId) {
+    try {
+      this.isAdmin = await checkAdminStatus(userId);
+      this.updateAuthUI(true);
+      return this.isAdmin;
+    } catch (error) {
+      console.error("Error checking admin status:", error);
+      this.isAdmin = false;
+      this.updateAuthUI(true);
+      return false;
+    }
+  }
+
+  setupAdminStatusListener(userId) {
+    // التوقف عن أي مستمعين سابقين
+    this.removeAdminListeners();
+    
+    // الاستماع لتغيرات حالة المشرف في الوقت الحقيقي
+    const adminStatusRef = ref(database, 'users/' + userId + '/isAdmin');
+    
+    const unsubscribe = onValue(adminStatusRef, (snapshot) => {
+      if (snapshot.exists()) {
+        this.isAdmin = snapshot.val();
+        console.log("تم تحديث حالة المشرف:", this.isAdmin);
+        this.updateAuthUI(true);
+        
+        // إشعار جميع المستمعين بالتغيير
+        this.notifyAdminStatusChange(this.isAdmin);
+      }
+    });
+    
+    this.adminListeners.push(unsubscribe);
+  }
+
+  removeAdminListeners() {
+    // إزالة جميع المستمعين السابقين
+    this.adminListeners.forEach(unsubscribe => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    });
+    this.adminListeners = [];
+  }
+
+  addAdminStatusListener(callback) {
+    this.adminListeners.push(callback);
+  }
+
+  notifyAdminStatusChange(isAdmin) {
+    this.adminListeners.forEach(callback => {
+      if (typeof callback === 'function') {
+        callback(isAdmin);
+      }
+    });
+  }
+
   async handleLogout() {
     try {
+      this.removeAdminListeners();
       await signOut(auth);
       window.location.href = 'index.html';
     } catch (error) {
@@ -46,8 +109,10 @@ class AuthManager {
       // إظهار عناصر المشرفين فقط إذا كان المستخدم مشرفاً
       if (this.isAdmin) {
         adminElements.forEach(el => el.style.display = 'block');
+        console.log("تم عرض عناصر المشرفين");
       } else {
         adminElements.forEach(el => el.style.display = 'none');
+        console.log("تم إخفاء عناصر المشرفين");
       }
     } else {
       authElements.forEach(el => el.style.display = 'none');
@@ -75,6 +140,7 @@ class AuthManager {
       return false;
     }
     
+    // التحقق مباشرة من قاعدة البيانات
     this.isAdmin = await checkAdminStatus(this.currentUser.uid);
     
     if (!this.isAdmin) {
