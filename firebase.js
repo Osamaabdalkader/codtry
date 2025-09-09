@@ -264,13 +264,20 @@ const setupRankChangeListener = async (userId) => {
 // دالة للتحقق إذا كان المستخدم مشرفاً
 const checkAdminStatus = async (userId) => {
   try {
+    console.log("التحقق من صلاحية المشرف للمستخدم:", userId);
     const userRef = ref(database, 'users/' + userId);
     const userSnapshot = await get(userRef);
     
-    if (!userSnapshot.exists()) return false;
+    if (!userSnapshot.exists()) {
+      console.log("المستخدم غير موجود في قاعدة البيانات");
+      return false;
+    }
     
     const userData = userSnapshot.val();
-    return userData.isAdmin === true;
+    const isAdmin = userData.isAdmin === true;
+    console.log("حالة المشرف للمستخدم", userId, "هي:", isAdmin);
+    
+    return isAdmin;
   } catch (error) {
     console.error("Error checking admin status:", error);
     return false;
